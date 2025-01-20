@@ -3,9 +3,15 @@
 import io
 import warnings
 from typing import Any
+from typing import Callable
+from typing import Dict
 from typing import Generator
+from typing import Iterable
+from typing import Optional
 from typing import Tuple
 
+import cv2
+import numpy as np
 from PIL import Image
 
 from .io import open_image_file
@@ -135,3 +141,57 @@ def crop_to_target(image: Image.Image, target_size: Tuple[int, int]) -> Image.Im
 
     # voila
     return image
+
+
+def irreversible_blur(
+    img: Image.Image,
+    downscale_factor: float = 1.0,
+    kernel_size: int = 51,
+    noise_intensity: int = 25,
+) -> Image.Image:
+    """Apply irreversible blurring to an image."""
+    # convert the PIL image to a NumPy array (for OpenCV processing)
+    img_cv = np.array(img)
+    if img_cv.ndim == 2:  # Grayscale image
+        img_cv = cv2.cvtColor(img_cv, cv2.COLOR_GRAY2BGR)
+
+    # apply shrink/resize to pixelate
+    height, width = img_cv.shape[:2]
+    small_img = cv2.resize(
+        img_cv,
+        (int(width * downscale_factor), int(height * downscale_factor)),
+        interpolation=cv2.INTER_LINEAR,
+    )
+    pixelated_img = cv2.resize(
+        small_img, (width, height), interpolation=cv2.INTER_NEAREST
+    )
+
+    # apply gaussian blur
+    blurred_img = cv2.GaussianBlur(pixelated_img, (kernel_size, kernel_size), 0)
+
+    # sprinkle in some pepper for extra seasoning
+    noise = np.random.normal(0, noise_intensity, blurred_img.shape)
+    noisy_img = blurred_img.astype(np.float32) + noise
+
+    # clip the values to ensure they are in the valid range
+    noisy_img = np.clip(noisy_img, 0, 255)
+
+    # convert back to PIL Image and save it
+    blurred_pil_img = Image.fromarray(noisy_img.astype(np.uint8))
+
+    # irreversible blur complete
+    return blurred_pil_img
+
+
+def blur_multi_images(
+    images: Iterable[Image.Image],
+    blur_method: Callable[[Image.Image], Image.Image] = irreversible_blur,
+    blur_params: Optional[Dict[str, Any]] = None,
+) -> Generator[Image.Image, None, None]:
+    """Apply a blur method to a sequence of PIL Image.Image objects."""
+    # The parameters for blurring
+    blur_params = {} if blur_params is None else blur_params
+
+    # Call the blur_method with image and params
+    for img in images:
+        yield blur_method(img, **blur_params)
