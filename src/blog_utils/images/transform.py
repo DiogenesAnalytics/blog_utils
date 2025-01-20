@@ -143,6 +143,14 @@ def crop_to_target(image: Image.Image, target_size: Tuple[int, int]) -> Image.Im
     return image
 
 
+def validate_kernel_size(kernel_size: int) -> None:
+    """Validate that kernel_size is a positive odd integer."""
+    if kernel_size <= 0:
+        raise ValueError("kernel_size must be a positive integer.")
+    if kernel_size % 2 == 0:
+        raise ValueError("kernel_size must be an odd number.")
+
+
 def irreversible_blur(
     img: Image.Image,
     downscale_factor: float = 1.0,
@@ -150,6 +158,9 @@ def irreversible_blur(
     noise_intensity: int = 25,
 ) -> Image.Image:
     """Apply irreversible blurring to an image."""
+    # make sure kernel_size is correct
+    validate_kernel_size(kernel_size)
+
     # convert the PIL image to a NumPy array (for OpenCV processing)
     img_cv = np.array(img)
     if img_cv.ndim == 2:  # Grayscale image
