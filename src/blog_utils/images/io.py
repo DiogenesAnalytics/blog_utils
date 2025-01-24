@@ -1,6 +1,5 @@
 """IO functions for images."""
 
-import os
 from pathlib import Path
 from typing import Generator
 from typing import List
@@ -8,6 +7,10 @@ from typing import Tuple
 from typing import Union
 
 from PIL import Image
+
+
+# mapping of formats to extensions using PIL's registered extensions
+EXTENSION_TO_FORMAT = Image.registered_extensions()
 
 
 def validate_image_file(file_path: Path) -> bool:
@@ -107,19 +110,55 @@ def input_image_dir(test_mode: bool = False) -> str:
         print("No valid images found in the directory. Please try again.")
 
 
-def save_image_file(img: Image.Image, filepath: str, format: str = "JPEG") -> None:
-    """Saves a PIL Image object to a file."""
+def validate_and_standardize_extension(extension: str) -> Tuple[str, str]:
+    """Validates and standardizes the given extension."""
+    # ensure extension has a leading dot
+    if not extension.startswith("."):
+        extension = "." + extension.lower()
+    else:
+        extension = extension.lower()
+
+    # validate the extension
+    if extension not in EXTENSION_TO_FORMAT:
+        raise ValueError(f"Unsupported extension: {extension}")
+
+    # get the corresponding format for the extension
+    format = EXTENSION_TO_FORMAT[extension]
+
+    # done
+    return extension, format
+
+
+def save_image_file(img: Image.Image, filepath: str, extension: str = ".jpg") -> None:
+    """Saves a PIL Image object correct format based on the extension."""
+    # validate and standardize the extension
+    extension, format = validate_and_standardize_extension(extension)
+
+    # if the filepath doesn't have the correct extension, add it
+    if not filepath.endswith(extension):
+        filepath += extension
+
+    # save the image with the correct format and extension
     img.save(filepath, format=format)
 
 
 def save_images_to_directory(
-    images: List[Image.Image], directory: str, format: str = "JPEG"
+    images: List[Image.Image], directory: Union[str, Path], extension: str = ".jpg"
 ) -> None:
-    """Saves a list of PIL Image objects to a directory."""
-    os.makedirs(directory, exist_ok=True)
+    """Saves a list of PIL Image objects to a directory with the correct extensions."""
+    # ensure the directory is a Path object
+    directory_path = Path(directory)
+
+    # create the directory if it doesn't exist
+    directory_path.mkdir(parents=True, exist_ok=True)
+
+    # save files
     for i, img in enumerate(images):
-        filepath = os.path.join(directory, f"image_{i}.{format.lower()}")
-        save_image_file(img, filepath, format=format)
+        # Construct the file path with the correct extension
+        filepath = directory_path / f"image_{i}"
+
+        # Save the image (extension-based saving)
+        save_image_file(img, str(filepath), extension=extension)
 
 
 def convert_size(size_in_bytes: int, unit: str) -> float:
@@ -140,16 +179,19 @@ def convert_size(size_in_bytes: int, unit: str) -> float:
 
 
 def list_file_sizes(
-    directory: str, units: str = "KB"
+    directory: Union[str, Path], units: str = "KB"
 ) -> Generator[Tuple[str, float], None, None]:
-    """Lists the sizes of all files in the specified directory."""
-    # get path obj
+    """Recursively lists the sizes of all files in the specified directory."""
+    # ensure the directory is a Path object
     directory_path = Path(directory)
 
-    # yield file sizes
-    for file in directory_path.iterdir():
+    # recursively iterate over all files in the directory
+    for file in directory_path.rglob("*"):
         if file.is_file():
-            yield (file.name, convert_size(file.stat().st_size, units))
+            yield (
+                str(file.relative_to(directory_path)),
+                convert_size(file.stat().st_size, units),
+            )
 
 
 def print_file_sizes(directory: str, unit: str = "KB") -> None:
