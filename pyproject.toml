@@ -15,7 +15,7 @@ Changelog = "https://github.com/DiogenesAnalytics/blog_utils/releases"
 [tool.poetry.dependencies]
 python = ">=3.10,<4.0"
 opencv-python = ">=4.11.0.86"
-numpy = ">=1.26"
+numpy = ">=1.26,<2"
 matplotlib = ">=3.10.0"
 pillow = ">=11.1.0"
 
