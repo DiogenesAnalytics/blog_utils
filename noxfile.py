@@ -1,193 +1,204 @@
 """Nox sessions."""
-import os
-import shlex
-import sys
+
+import re
+import shutil
 from pathlib import Path
-from textwrap import dedent
+from typing import Dict
+from typing import List
+from typing import Optional
 
 import nox
+from packaging import version
 
 
-try:
-    from nox_poetry import Session
-    from nox_poetry import session
-except ImportError:
-    message = f"""\
-    Nox failed to import the 'nox-poetry' package.
-
-    Please install it using the following command:
-
-    {sys.executable} -m pip install nox-poetry"""
-    raise SystemExit(dedent(message)) from None
-
-
-package = "blog_utils"
-python_versions = ["3.10", "3.9"]
-nox.needs_version = ">= 2021.6.6"
-nox.options.sessions = (
-    "pre-commit",
-    "mypy",
-    "tests",
-    "typeguard",
-    "xdoctest",
-)
-
-
-def activate_virtualenv_in_precommit_hooks(session: Session) -> None:
-    """Activate virtualenv in hooks installed by pre-commit.
-
-    This function patches git hooks installed by pre-commit to activate the
-    session's virtual environment. This allows pre-commit to locate hooks in
-    that environment when invoked from git.
-
-    Args:
-        session: The Session object.
-    """
-    assert session.bin is not None  # nosec
-
-    # Only patch hooks containing a reference to this session's bindir. Support
-    # quoting rules for Python and bash, but strip the outermost quotes so we
-    # can detect paths within the bindir, like <bindir>/python.
-    bindirs = [
-        bindir[1:-1] if bindir[0] in "'\"" else bindir
-        for bindir in (repr(session.bin), shlex.quote(session.bin))
-    ]
-
-    virtualenv = session.env.get("VIRTUAL_ENV")
-    if virtualenv is None:
-        return
-
-    headers = {
-        # pre-commit < 2.16.0
-        "python": f"""\
-            import os
-            os.environ["VIRTUAL_ENV"] = {virtualenv!r}
-            os.environ["PATH"] = os.pathsep.join((
-                {session.bin!r},
-                os.environ.get("PATH", ""),
-            ))
-            """,
-        # pre-commit >= 2.16.0
-        "bash": f"""\
-            VIRTUAL_ENV={shlex.quote(virtualenv)}
-            PATH={shlex.quote(session.bin)}"{os.pathsep}$PATH"
-            """,
-        # pre-commit >= 2.17.0 on Windows forces sh shebang
-        "/bin/sh": f"""\
-            VIRTUAL_ENV={shlex.quote(virtualenv)}
-            PATH={shlex.quote(session.bin)}"{os.pathsep}$PATH"
-            """,
+def parse_requires_python(requirement: str) -> Dict[str, Optional[version.Version]]:
+    """Parses a `requires-python` string (e.g., ">=3.9,<3.13")."""
+    # get regex
+    pattern = r"([<>]=?)\s*(\d+\.\d+)"
+    constraints = re.findall(pattern, requirement)
+    parsed_versions: Dict[str, Optional[version.Version]] = {
+        ">=": None,
+        "<=": None,
+        ">": None,
+        "<": None,
     }
 
-    hookdir = Path(".git") / "hooks"
-    if not hookdir.is_dir():
-        return
+    # populate dict
+    for op, ver in constraints:
+        parsed_versions[op] = version.parse(ver)
 
-    for hook in hookdir.iterdir():
-        if hook.name.endswith(".sample") or not hook.is_file():
-            continue
-
-        if not hook.read_bytes().startswith(b"#!"):
-            continue
-
-        text = hook.read_text()
-
-        if not any(
-            Path("A") == Path("a") and bindir.lower() in text.lower() or bindir in text
-            for bindir in bindirs
-        ):
-            continue
-
-        lines = text.splitlines()
-
-        for executable, header in headers.items():
-            if executable in lines[0].lower():
-                lines.insert(1, dedent(header))
-                hook.write_text("\n".join(lines))
-                break
+    return parsed_versions
 
 
-@session(name="pre-commit", python=python_versions[0])
-def precommit(session: Session) -> None:
-    """Lint using pre-commit."""
-    args = session.posargs or [
-        "run",
-        "--all-files",
-        "--hook-stage=manual",
-        "--show-diff-on-failure",
-    ]
-    session.install(
-        "black",
-        "darglint",
-        "flake8",
-        "flake8-bugbear",
-        "flake8-docstrings",
-        "flake8-rst-docstrings",
-        "isort",
-        "pep8-naming",
-        "pre-commit",
-        "pre-commit-hooks",
-        "pyupgrade",
-    )
-    session.run("pre-commit", *args)
-    if args and args[0] == "install":
-        activate_virtualenv_in_precommit_hooks(session)
+def generate_python_versions(
+    min_version: version.Version, max_version: version.Version
+) -> List[str]:
+    """Generates a list of Python versions incrementing by minor versions."""
+    # setup versions
+    python_versions = []
+    current_version = min_version
+
+    # loop
+    while current_version < max_version:
+        # add current minor version
+        python_versions.append(str(current_version))
+
+        # increment minor digit
+        next_minor = current_version.minor + 1
+
+        # update
+        current_version = version.parse(f"{current_version.major}.{next_minor}")
+
+    return python_versions
 
 
-@session(python=python_versions)
-def mypy(session: Session) -> None:
-    """Type-check using mypy."""
-    args = session.posargs or ["src", "tests"]
-    session.install(".")
-    session.install("mypy", "numpy", "pytest", "types-pillow")
-    session.run("mypy", *args)
-    if not session.posargs:
-        session.run("mypy", f"--python-executable={sys.executable}", "noxfile.py")
+def get_python_versions_from_toml() -> List[str]:
+    """Load Python version range from pyproject.toml."""
+    # load the entire configuration from the pyproject.toml
+    root_dir = Path(__file__).resolve().parent
+    project_toml = nox.project.load_toml(str(root_dir / "pyproject.toml"))
+
+    # extract the 'requires-python' field
+    python_version_str = project_toml["project"]["requires-python"]
+
+    # parse version constraints dynamically
+    parsed_versions = parse_requires_python(python_version_str)
+
+    # eetermine min and max versions (handling both `>=` and `>`, `<` and `<=`)
+    min_version = parsed_versions.get(">=") or parsed_versions.get(">")
+    max_version = parsed_versions.get("<=") or parsed_versions.get("<")
+
+    # check for weirdness
+    if min_version is None or max_version is None:
+        raise ValueError(f"Invalid requires-python format: {python_version_str}")
+
+    return generate_python_versions(min_version, max_version)
 
 
-@session(python=python_versions)
-def tests(session: Session) -> None:
-    """Run the test suite."""
-    session.install(".")
-    session.install("coverage[toml]", "pytest", "pygments")
-    try:
-        session.run("coverage", "run", "--parallel", "-m", "pytest", *session.posargs)
-    finally:
-        if session.interactive:
-            session.notify("coverage", posargs=[])
+# generate Python versions dynamically from the pyproject.toml
+PROJECT_PYTHON_VERSIONS = get_python_versions_from_toml()
 
 
-@session(python=python_versions[0])
-def coverage(session: Session) -> None:
-    """Produce the coverage report."""
-    args = session.posargs or ["report"]
+def install_lint_deps(session: nox.Session, deps: Optional[List[str]] = None) -> None:
+    """Install specified linting dependencies (or all if not provided)."""
+    # defaults
+    all_deps = ["flake8", "black", "isort", "mypy", "deptry"]
 
-    session.install("coverage[toml]")
+    # Use provided dependencies or default to all
+    deps_to_install = deps or all_deps
 
-    if not session.posargs and any(Path().glob(".coverage.*")):
-        session.run("coverage", "combine")
+    # Install Nox if not already installed
+    session.install("nox", "pytest")
 
-    session.run("coverage", *args)
-
-
-@session(python=python_versions[0])
-def typeguard(session: Session) -> None:
-    """Runtime type checking using Typeguard."""
-    session.install(".")
-    session.install("pytest", "typeguard", "pygments")
-    session.run("pytest", f"--typeguard-packages={package}", *session.posargs)
+    # Install the specified dependencies
+    session.install(*deps_to_install)
 
 
-@session(python=python_versions)
-def xdoctest(session: Session) -> None:
-    """Run examples with xdoctest."""
-    if session.posargs:
-        args = [package, *session.posargs]
-    else:
-        args = [f"--modname={package}", "--command=all"]
-        if "FORCE_COLOR" in os.environ:
-            args.append("--colored=1")
+def run_linting_tools(session: nox.Session) -> None:
+    """Run all linting tools."""
+    session.run("flake8")
+    session.run("black", ".")
+    session.run("isort", ".")
+    session.run("mypy", ".")
+    session.run("deptry", "src/")
 
-    session.install(".")
-    session.install("xdoctest[colors]")
-    session.run("python", "-m", "xdoctest", *args)
+
+def install_project(session: nox.Session, with_dev: bool = True) -> None:
+    """Install the project using Poetry."""
+    session.install("poetry", external=True)
+
+    poetry_args = ["install"]
+    if with_dev:
+        poetry_args.extend(["--with", "dev"])
+
+    session.run("poetry", *poetry_args, external=True)
+
+
+def run_tests(session: nox.Session) -> None:
+    """Run the test suite using pytest."""
+    session.run("pytest")
+
+
+@nox.session()
+def setup_python(session: nox.Session) -> None:
+    """Install required Python versions using pyenv."""
+    # find pyenv using shutil.which
+    pyenv_path = shutil.which("pyenv")
+    if not pyenv_path:
+        session.error("pyenv is not installed or not in PATH. Please install pyenv.")
+
+    # install python versions
+    for vers in PROJECT_PYTHON_VERSIONS:
+        session.run("pyenv", "install", "--skip-existing", vers, external=True)
+
+    # rehash pyenv to update shims
+    session.run("pyenv", "rehash", external=True)
+
+    # set global versions (optional, depending on your workflow)
+    session.run("pyenv", "global", *PROJECT_PYTHON_VERSIONS, external=True)
+
+    # verify installation
+    session.run("pyenv", "versions", external=True)
+
+
+@nox.session()
+def test_default_version(session: nox.Session) -> None:
+    """Run tests using pytest on the default Python version."""
+    install_project(session)
+    run_tests(session)
+
+
+@nox.session(python=PROJECT_PYTHON_VERSIONS)
+def test_all_versions(session: nox.Session) -> None:
+    """Run tests using pytest on all specified Python versions."""
+    install_project(session)
+    run_tests(session)
+
+
+@nox.session()
+def lint_default_version(session: nox.Session) -> None:
+    """Run all linting tools on the default Python version."""
+    install_project(session)
+    run_linting_tools(session)
+
+
+@nox.session(python=PROJECT_PYTHON_VERSIONS)
+def lint_all_versions(session: nox.Session) -> None:
+    """Run all linting tools on all specified Python version."""
+    install_project(session)
+    run_linting_tools(session)
+
+
+@nox.session(python=PROJECT_PYTHON_VERSIONS)
+def isort(session: nox.Session) -> None:
+    """Run isort."""
+    install_lint_deps(session, deps=["isort"])
+    session.run("isort", ".")
+
+
+@nox.session(python=PROJECT_PYTHON_VERSIONS)
+def black(session: nox.Session) -> None:
+    """Run black."""
+    install_lint_deps(session, deps=["black"])
+    session.run("black", ".")
+
+
+@nox.session(python=PROJECT_PYTHON_VERSIONS)
+def flake8(session: nox.Session) -> None:
+    """Run flake8."""
+    install_lint_deps(session, deps=["flake8"])
+    session.run("flake8")
+
+
+@nox.session(python=PROJECT_PYTHON_VERSIONS)
+def mypy(session: nox.Session) -> None:
+    """Run mypy."""
+    install_lint_deps(session, deps=["mypy"])
+    session.run("mypy", ".")
+
+
+@nox.session(python=PROJECT_PYTHON_VERSIONS)
+def deptry(session: nox.Session) -> None:
+    """Run deptry."""
+    install_lint_deps(session, deps=["deptry"])
+    session.run("deptry", "src/")

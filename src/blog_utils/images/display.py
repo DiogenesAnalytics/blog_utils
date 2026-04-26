@@ -4,6 +4,7 @@ import base64
 from io import BytesIO
 from typing import Iterable
 from typing import List
+from typing import Sequence
 from typing import Tuple
 
 import matplotlib.pyplot as plt
@@ -14,7 +15,7 @@ from .transform import crop_to_target
 
 
 def display_images_in_grid(
-    images: List[Image.Image],  # Iterable of PIL Image objects
+    images: Sequence[Image.Image],  # Iterable of PIL Image objects
     titles: List[str],
     target_size: Tuple[int, int],
     rows: int,

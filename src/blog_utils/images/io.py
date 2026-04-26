@@ -8,7 +8,6 @@ from typing import Union
 
 from PIL import Image
 
-
 # mapping of formats to extensions using PIL's registered extensions
 EXTENSION_TO_FORMAT = Image.registered_extensions()
 
@@ -32,7 +31,7 @@ def open_image_file(filepath: Union[str, Path]) -> Image.Image:
 
 
 def open_images_in_directory(
-    directory: Union[str, Path]
+    directory: Union[str, Path],
 ) -> Generator[Image.Image, None, None]:
     """Yields PIL Image objects for images in a directory and its subdirectories."""
     dir_path = Path(directory)

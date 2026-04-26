@@ -48,7 +48,7 @@ def temp_dir_with_images(
 
 
 def test_get_image_count_in_directory(
-    temp_dir_with_images: Tuple[Path, Path, Path, Path]
+    temp_dir_with_images: Tuple[Path, Path, Path, Path],
 ) -> None:
     """Test get_image_count_in_directory with image/non-image files."""
     # unpack the fixture
@@ -118,7 +118,7 @@ def test_input_image_dir_valid(
 
 
 def test_open_image_file_invalid_image(
-    temp_dir_with_images: Tuple[Path, Path, Path, Path]
+    temp_dir_with_images: Tuple[Path, Path, Path, Path],
 ) -> None:
     """Test open_image_file with an invalid image."""
     # unpack fixture
@@ -130,7 +130,7 @@ def test_open_image_file_invalid_image(
 
 
 def test_open_image_file_corrupted(
-    temp_dir_with_images: Tuple[Path, Path, Path, Path]
+    temp_dir_with_images: Tuple[Path, Path, Path, Path],
 ) -> None:
     """Test open_image_file with corrupted file."""
     # unpack fixture
@@ -146,7 +146,7 @@ def test_open_image_file_corrupted(
 
 
 def test_open_images_in_directory_valid_images(
-    temp_dir_with_images: Tuple[Path, Path, Path, Path]
+    temp_dir_with_images: Tuple[Path, Path, Path, Path],
 ) -> None:
     """Test open_images_in_directory with valid image files."""
     # unpack fixture
@@ -164,7 +164,7 @@ def test_open_images_in_directory_valid_images(
 
 
 def test_open_images_in_directory_empty_directory(
-    temp_dir_with_images: Tuple[Path, Path, Path, Path]
+    temp_dir_with_images: Tuple[Path, Path, Path, Path],
 ) -> None:
     """Test open_images_in_directory with an empty directory."""
     # unpack fixture
@@ -226,7 +226,7 @@ def test_save_image_file(temp_dir_with_images: Tuple[Path, Path, Path, Path]) ->
 
 
 def test_save_images_to_directory(
-    temp_dir_with_images: Tuple[Path, Path, Path, Path]
+    temp_dir_with_images: Tuple[Path, Path, Path, Path],
 ) -> None:
     """Test save_images_to_directory for saving multiple images."""
     # unpack fixture

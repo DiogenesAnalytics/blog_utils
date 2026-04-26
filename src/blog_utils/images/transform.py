@@ -41,7 +41,7 @@ def shrink_image_to_size(
         width, height = img.size
         img_resized = img.resize(
             (int(width * reduction_factor), int(height * reduction_factor)),
-            Image.LANCZOS,
+            Image.Resampling.LANCZOS,
         )
 
         # use a context manager to handle the BytesIO object
